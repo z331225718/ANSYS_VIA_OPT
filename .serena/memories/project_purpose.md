@@ -1,0 +1,1 @@
+This project uses the `pyaedt` library to automatically create a complex, fully parameterized 10-layer FCBGA (Flip-Chip Ball Grid Array) differential signal model in Ansys HFSS. It reads all physical parameters from an external XML file to generate a model ready for analysis, including signal paths, GND planes, Anti-Pads, and port setups.

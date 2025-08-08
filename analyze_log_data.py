@@ -73,8 +73,8 @@ def analyze_single_cost(df, cost_name, param_names):
 
     # 2. Heatmap
     fig_heatmap = plt.figure(figsize=(16, 14))
-    sns.heatmap(df[[cost_name] + param_names].corr(), vmin=-1, vmax=1, annot=True, cmap='BrBG', annot_kws={{"size": 8}})
-    plt.title(f'{cost_name} 与各参数的相关性热力图', fontdict={{'fontsize':18}}, pad=12)
+    sns.heatmap(df[[cost_name] + param_names].corr(), vmin=-1, vmax=1, annot=True, cmap='BrBG', annot_kws={"size": 8})
+    plt.title(f'{cost_name} 与各参数的相关性热力图', fontdict={'fontsize':18}, pad=12)
     heatmap_b64 = plot_to_base64(fig_heatmap)
     analysis_html += f'<div class="plot-container"><h3>相关性热力图</h3><img src="data:image/png;base64,{heatmap_b64}" alt="相关性热力图"></div>'
 
@@ -83,7 +83,7 @@ def analyze_single_cost(df, cost_name, param_names):
     for param in param_names:
         fig_scatter, ax = plt.subplots(figsize=(8, 6))
         sc = ax.scatter(df[param], df[cost_name], c=df['Total_Iteration'], cmap='viridis', alpha=0.6)
-        ax.set_xlabel(param); ax.set.ylabel(cost_name); ax.grid(True)
+        ax.set_xlabel(param); ax.set_ylabel(cost_name); ax.grid(True)
         fig_scatter.colorbar(sc, ax=ax, label='迭代次数')
         plot_html = f'<div class="plot-container"><h4>{cost_name} vs. {param}</h4><img src="data:image/png;base64,{plot_to_base64(fig_scatter)}" alt="{cost_name} vs. {param}"></div>'
         scatter_plots_html += plot_html
@@ -100,7 +100,13 @@ def analyze_optimization_log():
     # 2. Identify parameter and cost columns
     all_columns = df.columns.tolist()
     cost_columns = [col for col in all_columns if col.startswith('Cost')]
-    param_names = [col for col in all_columns if col not in df.columns[:cost_columns[-1]+1]]
+    # 修复列识别逻辑，找到成本列的最后一列位置并取其后面的所有列作为参数列
+    if cost_columns:
+        last_cost_col_index = all_columns.index(cost_columns[-1])
+        param_names = all_columns[last_cost_col_index + 1:]
+    else:
+        param_names = []
+    
     if not cost_columns: print("错误: 日志中未找到任何'Cost'列", file=sys.stderr); return
     print(f"找到 {len(cost_columns)} 个成本列进行分析: {cost_columns}")
     print(f"找到 {len(param_names)} 个参数进行分析.")

@@ -1,0 +1,1 @@
+The project is written in Python and relies heavily on the `pyaedt` library for Ansys HFSS automation. It uses the standard `xml.etree.ElementTree` for parsing configuration files. The main dependency is `pyaedt`, which requires a local installation of Ansys Electronics Desktop (AEDT).
