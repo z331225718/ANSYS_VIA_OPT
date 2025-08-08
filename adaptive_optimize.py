@@ -83,7 +83,7 @@ INITIAL_PARAM_SPACE = [
     Real(0.22, 0.30, name='Via_6_8_antipad_diameter'),
     Real(0.20, 0.28, name='Via_8_10_pitch'),
     Real(0.22, 0.30, name='Via_8_10_antipad_diameter'),
-    Real(0.45, 0.65, name='BGA_antipad_diameter'),
+    Real(0.45, 0.65, name='Ball_antipad_diameter'),
     # --- Added Trace Parameters ---
     Real(0.04, 0.08, name='Cu8_trace_gap'),
     Real(0.02, 0.035, name='Cu8_trace_width'),
