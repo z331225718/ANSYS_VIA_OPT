@@ -1,0 +1,69 @@
+<?xml version="1.0"?>
+<fcbga_parameters>
+    <stackup>
+        <layer name="molding_layer" type="dielectric" material="Molding" thickness="0.45mm"/>
+        <layer name="SM_top_layer" type="dielectric" material="SR1" thickness="0.02mm"/>
+        <layer name="Cu1" type="signal" material="copper" thickness="0.015mm" filling_material="SR1"/>
+        <layer name="DRILL1-2" type="dielectric" material="GL102" thickness="0.03mm"/>
+        <layer name="Cu2" type="signal" material="copper" thickness="0.015mm" filling_material="GL102"/>
+        <layer name="DRILL2-3" type="dielectric" material="GL102" thickness="0.03mm"/>
+        <layer name="Cu3" type="signal" material="copper" thickness="0.015mm" filling_material="GL102"/>
+        <layer name="DRILL3-4" type="dielectric" material="GL102" thickness="0.03mm"/>
+        <layer name="Cu4" type="signal" material="copper" thickness="0.015mm" filling_material="GL102"/>
+        <layer name="DRILL4-5" type="dielectric" material="GL102" thickness="0.03mm"/>
+        <layer name="Cu5" type="signal" material="copper" thickness="0.015mm" filling_material="GL102"/>
+        <layer name="DRILL5-6" type="dielectric" material="HL832NSF" thickness="0.2mm"/>
+        <layer name="Cu6" type="signal" material="copper" thickness="0.015mm" filling_material="GL102"/>
+        <layer name="DRILL6-7" type="dielectric" material="GL102" thickness="0.03mm"/>
+        <layer name="Cu7" type="signal" material="copper" thickness="0.015mm" filling_material="GL102"/>
+        <layer name="DRILL7-8" type="dielectric" material="GL102" thickness="0.03mm"/>
+        <layer name="Cu8" type="signal" material="copper" thickness="0.015mm" filling_material="GL102"/>
+        <layer name="DRILL8-9" type="dielectric" material="GL102" thickness="0.03mm"/>
+        <layer name="Cu9" type="signal" material="copper" thickness="0.015mm" filling_material="GL102"/>
+        <layer name="DRILL9-10" type="dielectric" material="GL102" thickness="0.03mm"/>
+        <layer name="Cu10" type="signal" material="copper" thickness="0.015mm" filling_material="SR1"/>
+        <layer name="SM_BOTTOM" type="dielectric" material="SR1" thickness="0.02mm"/>
+    </stackup>
+    <via_styles>
+        <via name="Via_1-2" pad_diameter_up="0.1mm" pad_diameter_down="0.1mm" drill_diameter="0.065mm" pitch="0.185mm" antipad_diameter="0.2mm"/>
+        <via name="Via_1_3" pitch="0.185mm" antipad_diameter="0.2mm"/>
+        <via name="Via_2-3" pad_diameter_up="0.1mm" pad_diameter_down="0.1mm" drill_diameter="0.065mm" pitch="0.185mm" antipad_diameter="0.2mm"/>
+        <via name="Via_3-4" pad_diameter_up="0.1mm" pad_diameter_down="0.1mm" drill_diameter="0.065mm" pitch="0.242mm" antipad_diameter="0.25mm"/>
+        <via name="Via_3_5" pitch="0.242mm" antipad_diameter="0.25mm"/>
+        <via name="Via_4-5" pad_diameter_up="0.1mm" pad_diameter_down="0.11mm" drill_diameter="0.065mm" pitch="0.242mm" antipad_diameter="0.25mm"/>
+        <via name="Via_5-6" pad_diameter_up="0.15mm" pad_diameter_down="0.15mm" drill_diameter="0.09mm" pitch="0.4mm" antipad_diameter="0.36mm"/>
+        <via name="Via_6-7" pad_diameter_up="0.11mm" pad_diameter_down="0.1mm" drill_diameter="0.065mm" pitch="0.252mm" antipad_diameter="0.25mm"/>
+        <via name="Via_6_8" pitch="0.252mm" antipad_diameter="0.25mm"/>
+        <via name="Via_7-8" pad_diameter_up="0.1mm" pad_diameter_down="0.1mm" drill_diameter="0.065mm" pitch="0.252mm" antipad_diameter="0.25mm"/>
+        <via name="Via_8-9" pad_diameter_up="0.1mm" pad_diameter_down="0.1mm" drill_diameter="0.065mm" pitch="0.242mm" antipad_diameter="0.25mm"/>
+        <via name="Via_8_10" pitch="0.242mm" antipad_diameter="0.25mm"/>
+        <via name="Via_9-10" pad_diameter_up="0.1mm" pad_diameter_down="0.1mm" drill_diameter="0.065mm" pitch="0.242mm" antipad_diameter="0.25mm"/>
+    </via_styles>
+    <ball_style>
+        <ball diameter="0.3mm" pitch="0.5mm" height="0.2mm" pad_diameter="0.35m" antipad_diameter="0.608mm"/>
+    </ball_style>
+
+    <routing_rules>
+        <rule layer="Cu1" width="0.036mm" gap="0.06mm" space="0.05mm"/>
+        <rule layer="Cu2" width="0.025mm" gap="0.05mm" space="0.05mm"/>
+        <rule layer="Cu3" width="0.025mm" gap="0.05mm" space="0.05mm"/>
+        <rule layer="Cu4" width="0.025mm" gap="0.05mm" space="0.05mm"/>
+        <rule layer="Cu5" width="0.025mm" gap="0.05mm" space="0.05mm"/>
+        <rule layer="Cu6" width="0.025mm" gap="0.05mm" space="0.05mm"/>
+        <rule layer="Cu7" width="0.025mm" gap="0.05mm" space="0.05mm"/>
+        <rule layer="Cu8" width="0.025mm" gap="0.05mm" space="0.05mm"/>
+        <rule layer="Cu9" width="0.025mm" gap="0.05mm" space="0.05mm"/>
+        <rule layer="Cu10" width="0.036mm" gap="0.06mm" space="0.05mm"/>
+    </routing_rules>
+    <ball_maps>
+        <ball_map type="outer" signal_layer_y_start="-0.3mm" dielectric_layer_y_start="-0.5mm"/>
+        <ball_map type="inner" signal_layer_y_start="-0.8mm" dielectric_layer_y_start="-1mm"/>
+    </ball_maps>
+    <model_settings margin="0mm" />
+    <materials_properties>
+        <material name="Molding" permittivity="3.8" loss_tangent="0.01" freq="1GHz"/>
+        <material name="SR1" permittivity="3.4" loss_tangent="0.019" freq="1GHz"/>
+        <material name="GL102" permittivity="3.3" loss_tangent="0.0044" freq="5.8GHz"/>
+        <material name="HL832NSF" permittivity="3.9" loss_tangent="0.0065" freq="1GHz"/>
+    </materials_properties>
+</fcbga_parameters>
