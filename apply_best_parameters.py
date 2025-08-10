@@ -128,7 +128,7 @@ def apply_best_parameters():
             # Save and close the project
             print("  - 正在保存并关闭项目...")
             hfss.save_project()
-            hfss.close_project(hfss.active_project.name)
+            hfss.close_project()
             print(f"  - 成功创建项目: {new_project_path.name}")
 
     except Exception as e:
