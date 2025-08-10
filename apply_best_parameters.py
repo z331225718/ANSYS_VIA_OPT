@@ -17,7 +17,7 @@ AEDT_VERSION = "2023.2" # Or your specific version
 def apply_best_parameters():
     """
     Reads an optimization log, finds the best parameter set for each cost function,
-    and creates a new AEDT project for each of these sets.
+    and creates a new, de-duplicated AEDT project for each unique set.
     """
     # 1. Load Data and Prepare Environment
     if not LOG_FILE.exists():
@@ -49,55 +49,60 @@ def apply_best_parameters():
 
     # 3. Launch AEDT
     print(f"--- 正在启动 Ansys Electronics Desktop {AEDT_VERSION} ---")
-    # This launches AEDT. new_desktop_session=True ensures it's a new instance.
-    # We will reuse this instance for all operations.
     hfss = None
     try:
         hfss = Hfss(version=AEDT_VERSION, new_desktop=True)
         
+        # Data structures for de-duplication
+        processed_params_set = set()
+        params_to_cost_map = {}
+
         # 4. Process each cost function
         for cost in cost_columns:
             print(f"\n--- 正在处理成本项: {cost} ---")
             
-            # Find all rows with the minimum value for the current cost
+            # Find best row with tie-breaking
             min_cost_value = df[cost].min()
-            tied_rows_df = df[df[cost] == min_cost_value].copy() # Use .copy() to avoid SettingWithCopyWarning
+            tied_rows_df = df[df[cost] == min_cost_value].copy()
 
             best_row = None
-            # Check if there's a tie
             if len(tied_rows_df) > 1:
                 print(f"  - 发现 {len(tied_rows_df)} 个方案并列最小成本 ({min_cost_value}). 正在应用决胜局逻辑...")
-                
-                # Tie-breaking logic: if analyzing a component cost, use 'Cost' (total) as the tie-breaker.
                 if cost != 'Cost' and 'Cost' in df.columns:
                     print("  - 使用 'Cost' (总成本) 作为决胜局标准.")
                     best_row = tied_rows_df.loc[tied_rows_df['Cost'].idxmin()]
                 else:
-                    # Fallback for two cases:
-                    # 1. We are analyzing the 'Cost' (total) column itself and there's a tie.
-                    # 2. We are analyzing a component cost, but no 'Cost' (total) column exists.
                     print("  - 使用其余成本项之和作为决胜局标准.")
                     other_costs = [c for c in cost_columns if c != cost]
                     if other_costs:
                         tied_rows_df['TieBreaker_Cost'] = tied_rows_df[other_costs].sum(axis=1)
                         best_row = tied_rows_df.loc[tied_rows_df['TieBreaker_Cost'].idxmin()]
                     else:
-                        # If there are no other costs to sum, just pick the first tied result.
                         best_row = tied_rows_df.iloc[0]
             else:
                 print(f"  - 找到唯一最优方案.")
                 best_row = tied_rows_df.iloc[0]
 
-            # Create a dictionary of the optimal parameters
             best_params = best_row[param_names].to_dict()
             
+            # De-duplication logic
+            params_tuple = tuple(sorted(best_params.items()))
+            if params_tuple in processed_params_set:
+                original_cost = params_to_cost_map[params_tuple]
+                print(f"  - INFO: 此最优参数组与 '{original_cost}' 的相同。")
+                print(f"  - 跳过创建重复的AEDT文件。")
+                continue # Skip to the next cost function
+            
+            # If we are here, it's a new unique parameter set
+            processed_params_set.add(params_tuple)
+            params_to_cost_map[params_tuple] = cost
+            print(f"  - 发现新的最优参数组合。将创建新的AEDT项目。")
+
             print(f"  - 选定的最优成本值: {best_row[cost]}")
             if cost != 'Cost' and 'Cost' in best_row:
                  print(f"  - (决胜局) 总成本: {best_row['Cost']}")
             elif 'TieBreaker_Cost' in best_row:
                  print(f"  - (决胜局) 其余成本之和: {best_row['TieBreaker_Cost']}")
-
-            print(f"  - 对应的参数将在新项目里被设置.")
 
             # Define new project path
             new_project_name = f"{BASE_PROJECT_FILE.stem}_Optimized_for_{cost}.aedt"
@@ -114,9 +119,6 @@ def apply_best_parameters():
             print("  - 正在更新HFSS中的设计变量...")
             for param_name, param_value in best_params.items():
                 try:
-                    # pyaedt expects variables to be strings with units
-                    # Assuming all parameters are lengths and should be in 'mm'
-                    # This might need adjustment if units vary
                     value_with_unit = f"{param_value}mm"
                     hfss[param_name] = value_with_unit
                     print(f"    - 设置 {param_name} = {value_with_unit}")
