@@ -136,7 +136,7 @@ class TDRCost(CostCalculator):
             report = hfss.post.create_report(
                 expressions=self.expression,
                 domain="Time",
-                primary_sweep_values="Time"
+                primary_sweep_variable="Time"
             )
             # --- Step 2: Get data from the newly created report ---
             tdr_data = report.get_solution_data()
