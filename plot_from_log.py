@@ -38,24 +38,29 @@ def animate(i):
 
         # --- FIND THE BEST POINT BASED ON TOTAL COST (first occurrence in case of a tie) ---
         best_cost_info = None
-        if 'Cost' in df.columns and not df['Cost'].empty:
-            min_cost_value = df['Cost'].min()
+        # Robustly use the first found cost column as the primary one for finding the best point.
+        # This aligns with the convention that the first cost column is the total/main cost.
+        if cost_columns and cost_columns[0] in df.columns and not df[cost_columns[0]].empty:
+            primary_cost_col = cost_columns[0]
+            min_cost_value = df[primary_cost_col].min()
             # Explicitly find the first index matching the minimum value
-            best_idx = df[df['Cost'] == min_cost_value].index[0]
+            best_idx = df[df[primary_cost_col] == min_cost_value].index[0]
             best_row = df.loc[best_idx]
             best_cost_info = {
                 'iter': best_row['Total_Iteration'],
-                'cost': best_row['Cost'],
+                'cost': best_row[primary_cost_col],
                 'params': best_row[param_names]
             }
 
         ax.clear()
         
         # --- PLOT EACH COST COLUMN ---
+        primary_cost_col = cost_columns[0] if cost_columns else None
         for cost_col in cost_columns:
-            marker = 'o' if cost_col == 'Cost' else None
-            linestyle = '-' if cost_col == 'Cost' else '--'
-            linewidth = 2.5 if cost_col == 'Cost' else 1.5
+            is_primary = (cost_col == primary_cost_col)
+            marker = 'o' if is_primary else None
+            linestyle = '-' if is_primary else '--'
+            linewidth = 2.5 if is_primary else 1.5
             ax.plot(df['Total_Iteration'], df[cost_col], label=cost_col, marker=marker, 
                     linestyle=linestyle, linewidth=linewidth, markersize=4, alpha=0.8)
 

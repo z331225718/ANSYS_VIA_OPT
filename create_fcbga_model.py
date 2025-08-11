@@ -825,12 +825,29 @@ class FcbgaModeler:
             self.create_hfss_setup_and_sweep()  # 创建HFSS setup和频率扫描
             self.create_return_path_bodies() # Create the continuous return path bodies
             self.create_differential_pairs() # Create differential pairs
+            self.set_conductor_roughness() # Set copper roughness
             print("FCBGA model generation complete.")
         except Exception as e:
             print("An error occurred during the model generation:")
             traceback.print_exc() # Print detailed traceback
         finally:
             self.save_project_and_keep_open()
+
+    def set_conductor_roughness(self):
+        """Sets the copper roughness for the main signal paths using the Huray model."""
+        print("Setting conductor roughness for P_Path and N_Path...")
+        try:
+            self.hfss.assign_finite_conductivity(
+                assignment=["P_Path", "N_Path"],
+                use_huray=True,
+                radius="0.4um",
+                ratio="1.8",
+                name="Roughness_PN_Paths"
+            )
+            print("      - Successfully applied Huray roughness model.")
+        except Exception as e:
+            print(f"      - ERROR: Failed to set conductor roughness. Error: {e}")
+            traceback.print_exc()
 
     def create_differential_pairs(self):
         """Creates differential pairs from existing terminals based on the recorded script."""

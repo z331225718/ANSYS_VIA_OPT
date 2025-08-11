@@ -35,8 +35,6 @@ DESIGN_NAME = "FCBGA_Differential_Pair_From_XML"
 SETUP_NAME = "Setup1"
 
 
-OPTIMIZATION_MODE = 'single_point'  # Options: 'single_point' or 'wideband'
-
 # --- Iteration Control ---
 TOTAL_ITERATIONS = 100 # Total number of optimization runs
 STOP_AFTER_N_CONSECUTIVE_ZEROS = 2 # Set to 0 or less to disable early stopping
@@ -50,27 +48,162 @@ BOUNDARY_EDGE_FRACTION = 0.05 # Defines the "edge" of the boundary for pressure 
 BOUNDARY_PRESSURE_THRESHOLD = 0.3 # Percentage of elite points needed to trigger expansion (30%)
 BOUNDARY_EXPANSION_FACTOR = 0.2 # How much to expand the boundary by (20%)
 
-# --- Performance Goal ---
-# For single_point mode: The target S11 value at the target frequency.
-TARGET_S11_DB_SINGLE_POINT = -15.0 
+# ----------------------------------------------------------------------------
+# 2. COST CALCULATION STRATEGIES
+# -----------------------------------------------------------------------------
 
-# For wideband mode: A list of (frequency_limit, target_db) pairs.
-# Defines a piecewise target. The list must be sorted by frequency.
-# Example: [(28.0, -20.0), (56.0, -15.0)] means:
-# - Freq <= 28.0 GHz, target is -20.0 dB
-# - 28.0 < Freq <= 56.0 GHz, target is -15.0 dB
-WIDEBAND_TARGETS = [
-    (28.0, -20.0),
-    (56.0, -15.0)
+class CostCalculator:
+    """Abstract base class for all cost calculation strategies."""
+    def __init__(self):
+        self.name = self.__class__.__name__
+        self.history = []
+
+    def calculate(self, hfss):
+        """Calculates the cost. Must be implemented by subclasses."""
+        raise NotImplementedError
+
+    def normalize(self, cost):
+        """Normalizes the cost based on its history."""
+        if not self.history:
+            return cost
+        max_cost = max(self.history) if self.history else 1.0
+        return cost / max_cost if max_cost > 0 else cost
+
+class SParameterCost(CostCalculator):
+    """Calculates cost based on S-parameter violations over a frequency range."""
+    def __init__(self, expression, targets, freq_range):
+        super().__init__()
+        self.expression = expression
+        self.targets = targets
+        self.freq_range = freq_range
+
+    def calculate(self, hfss):
+        print(f"  - INFO ({self.name}): Retrieving S-parameter data for expression '{self.expression}'...")
+        solution_data = hfss.post.get_solution_data(self.expression)
+
+        if not solution_data or not hasattr(solution_data, 'primary_sweep_values'):
+            print(f"  - WARNING ({self.name}): Invalid solution data provided.")
+            return 100.0
+
+        s_db = np.array(solution_data.data_real())
+        freq_unit = solution_data.units_sweeps.get('Freq', 'GHz')
+        
+        conversion_factors = {'GHz': 1.0, 'MHz': 1e-3, 'kHz': 1e-6, 'Hz': 1e-9}
+        conversion_to_ghz = conversion_factors.get(freq_unit)
+        if conversion_to_ghz is None:
+            raise ValueError(f"Unknown frequency unit '{freq_unit}' encountered.")
+
+        freq_ghz = np.array(solution_data.primary_sweep_values) * conversion_to_ghz
+        
+        mask = (freq_ghz >= self.freq_range[0]) & (freq_ghz <= self.freq_range[1])
+        s_db_filtered = s_db[mask]
+        freq_ghz_filtered = freq_ghz[mask]
+
+        if len(s_db_filtered) == 0:
+            print(f"  - WARNING ({self.name}): No data points in the specified frequency range.")
+            return 100.0
+
+        target_db_array = np.zeros_like(freq_ghz_filtered)
+        last_freq_limit = 0.0
+        for freq_limit, target_db in self.targets:
+            segment_mask = (freq_ghz_filtered > last_freq_limit) & (freq_ghz_filtered <= freq_limit)
+            target_db_array[segment_mask] = target_db
+            last_freq_limit = freq_limit
+            
+        violations = np.maximum(0, s_db_filtered - target_db_array)
+        cost = np.sum(violations)
+        self.history.append(cost)
+        return cost
+
+class TDRCost(CostCalculator):
+    """Calculates cost based on TDR impedance deviation and flatness."""
+    def __init__(self, expression, target_impedance, time_range, weight_proximity=1.0, weight_flatness=1.0):
+        super().__init__()
+        self.expression = expression
+        self.target_impedance = target_impedance
+        self.time_range = time_range
+        self.w_proximity = weight_proximity
+        self.w_flatness = weight_flatness
+        self.name = f"TDRCost_w_prox_{self.w_proximity}_w_flat_{self.w_flatness}"
+        self.report_name = f"_gemini_tdr_report_{self.expression}" # Unique name for the dynamic report
+
+    def calculate(self, hfss):
+        """Dynamically creates a TDR report, extracts data, and calculates cost."""
+        try:
+            print(f"  - INFO ({self.name}): Dynamically creating TDR report for '{self.expression}'...")
+            
+            # --- Step 1: Dynamically create the TDR report ---
+            report = hfss.post.create_report(
+                expressions=self.expression,
+                domain="Time",
+                primary_sweep="Time",
+            )
+            # --- Step 2: Get data from the newly created report ---
+            tdr_data = report.get_solution_data()
+
+            if not tdr_data or not hasattr(tdr_data, 'primary_sweep_values'):
+                print(f"  - ERROR ({self.name}): Failed to retrieve TDR data from dynamically created report.")
+                return 1000.0
+
+            # --- Step 3: Process data and calculate cost (as before) ---
+            time_ns = np.array(tdr_data.primary_sweep_values)
+            impedance_z = np.array(tdr_data.data_real())
+
+            mask = (time_ns >= self.time_range[0]) & (time_ns <= self.time_range[1])
+            z_filtered = impedance_z[mask]
+
+            if len(z_filtered) < 2:
+                print(f"  - WARNING ({self.name}): Less than 2 data points in the specified time range.")
+                return 1000.0
+
+            cost_proximity = np.mean((z_filtered - self.target_impedance)**2)
+            dz = z_filtered[1:] - z_filtered[:-1]
+            cost_flatness = np.mean(dz**2)
+            total_cost = (self.w_proximity * cost_proximity) + (self.w_flatness * cost_flatness)
+            
+            print(f"    - Proximity Cost (MSE): {cost_proximity:.4f}")
+            print(f"    - Flatness Cost (MSD): {cost_flatness:.4f}")
+            
+            self.history.append(total_cost)
+            return total_cost
+
+        except Exception as e:
+            print(f"  - ERROR ({self.name}): An exception occurred during TDR cost calculation: {e}")
+            traceback.print_exc()
+            return 1000.0
+        finally:
+            # --- Step 4: Clean up by deleting the dynamic report ---
+            try:
+                hfss.post.delete_report(self.report_name)
+                print(f"  - INFO ({self.name}): Successfully deleted dynamic report '{self.report_name}'.")
+            except Exception as e:
+                print(f"  - WARNING ({self.name}): Could not delete dynamic report '{self.report_name}'. It may remain in the project.")
+
+# --- New Cost Objectives Configuration ---
+COST_OBJECTIVES = [
+    {
+        'strategy': SParameterCost(
+            expression="dB(St(Diff1,Diff1))",
+            targets=[(28.0, -20.0), (56.0, -15.0)],
+            freq_range=(0.0, 56.0)
+        ),
+        'weight': 1.0
+    },
+    # Uncomment the block below to enable TDR optimization
+    # {
+    #     'strategy': TDRCost(
+    #         expression="TDRZt(Diff1)",
+    #         target_impedance=85, 
+    #         time_range=(0.1, 0.5), # Unit: ns
+    #         weight_proximity=1.0,  # TDR internal weight: Proximity to target
+    #         weight_flatness=0.8    # TDR internal weight: Flatness
+    #     ),
+    #     'weight': 1.0 # Weight of the TDR objective in the total cost
+    # }
 ]
-# Target frequency in GHz for single-point optimization.
-TARGET_FREQ_GHZ = 56.0
-# Frequency range in GHz for wideband optimization.
-WIDEBAND_FREQ_START_GHZ = 0.0
-WIDEBAND_FREQ_END_GHZ = 56.0
 
 # -----------------------------------------------------------------------------
-# 2. DEFINE INITIAL PARAMETER SPACE
+# 3. DEFINE INITIAL PARAMETER SPACE
 # -----------------------------------------------------------------------------
 INITIAL_PARAM_SPACE = [
     Real(0.15, 0.22, name='Via_1_3_pitch'),
@@ -98,108 +231,56 @@ PARAM_NAMES = [p.name for p in INITIAL_PARAM_SPACE]
 hfss = None
 
 # -----------------------------------------------------------------------------
-# 3. OBJECTIVE FUNCTION (No changes needed here)
+# 4. OBJECTIVE FUNCTION
 # -----------------------------------------------------------------------------
 @use_named_args(INITIAL_PARAM_SPACE)
 def evaluate_hfss(**params):
-    global hfss
+    global hfss, EVALUATION_COUNT, CONSECUTIVE_ZERO_COST_COUNT
+    EVALUATION_COUNT += 1
     print("\n" + "="*60)
+    print(f"Evaluation #{EVALUATION_COUNT}")
     print(f"Evaluating parameters:")
     try:
         for name, value in params.items():
             hfss[name] = f"{value}mm"
             print(f"  - Setting {name} = {value:.4f}mm")
+        
         print("  - Running HFSS analysis...")
-        hfss.analyze_setup(SETUP_NAME)
+        hfss.analyze_setup(name = SETUP_NAME,cores=64,tasks=1)
         print("  - Analysis complete.")
-        print("  - Retrieving S-parameter data...")
-        solution_data = hfss.post.get_solution_data("dB(St(Diff1,Diff1))")
-        if not solution_data or not hasattr(solution_data, 'primary_sweep_values'):
-            print("  - ERROR: Failed to retrieve valid solution data.")
-            return 100.0
-        s11_db = np.array(solution_data.data_real())
         
-        # --- Robust Unit Handling ---
-        # Programmatically determine the frequency unit from the solution data
-        freq_unit = solution_data.units_sweeps['Freq']
-        
-        # Calculate the conversion factor to bring the frequency to GHz
-        if freq_unit == 'GHz':
-            conversion_to_ghz = 1.0
-        elif freq_unit == 'MHz':
-            conversion_to_ghz = 1e-3
-        elif freq_unit == 'kHz':
-            conversion_to_ghz = 1e-6
-        elif freq_unit == 'Hz':
-            conversion_to_ghz = 1e-9
-        else:
-            raise ValueError(f"Unknown frequency unit '{freq_unit}' encountered.")
+        total_cost = 0.0
+        individual_costs = {}
+
+        print("  - Calculating costs from objectives:")
+        for obj in COST_OBJECTIVES:
+            strategy = obj['strategy']
+            weight = obj['weight']
             
-        # Apply the conversion factor to get a reliable frequency array in GHz
-        freq_ghz = np.array(solution_data.primary_sweep_values) * conversion_to_ghz
+            raw_cost = strategy.calculate(hfss)
+            individual_costs[strategy.name] = raw_cost
+            print(f"    - Strategy: {strategy.name}, Raw Cost: {raw_cost:.4f}")
 
-        # --- The Cost Calculation (Mode-dependent) ---
-        segmented_costs = []
-        if OPTIMIZATION_MODE == 'wideband':
-            mask = (freq_ghz >= WIDEBAND_FREQ_START_GHZ) & (freq_ghz <= WIDEBAND_FREQ_END_GHZ)
-            s11_db_filtered = s11_db[mask]
-            freq_ghz_filtered = freq_ghz[mask]
+            normalized_cost = strategy.normalize(raw_cost)
+            weighted_cost = normalized_cost * weight
+            total_cost += weighted_cost
+            print(f"    - Normalized Cost: {normalized_cost:.4f}, Weighted Cost: {weighted_cost:.4f}")
 
-            if len(s11_db_filtered) == 0:
-                print(f"  - WARNING: No data points in the specified wideband range.")
-                return 100.0
-            
-            # --- Build the piecewise target array and calculate segmented costs ---
-            target_db_array = np.zeros_like(freq_ghz_filtered)
-            total_violations = np.zeros_like(freq_ghz_filtered)
-            last_freq_limit = 0.0
-            
-            for freq_limit, target_db in WIDEBAND_TARGETS:
-                segment_mask = (freq_ghz_filtered > last_freq_limit) & (freq_ghz_filtered <= freq_limit)
-                target_db_array[segment_mask] = target_db
-                
-                # Calculate violations for this specific segment
-                segment_s11 = s11_db_filtered[segment_mask]
-                segment_target = target_db_array[segment_mask]
-                segment_violations = np.maximum(0, segment_s11 - segment_target)
-                segmented_costs.append(np.sum(segment_violations))
-                
-                last_freq_limit = freq_limit
+        print(f"  - Cost (Total Weighted): {total_cost:.4f}")
 
-            # Total cost is the sum of all violations across all segments
-            violations = np.maximum(0, s11_db_filtered - target_db_array)
-            cost = np.sum(violations)
-            print(f"  - Cost (Total Integrated Area): {cost:.4f}")
-
-        elif OPTIMIZATION_MODE == 'single_point':
-            target_freq_index = (np.abs(freq_ghz - TARGET_FREQ_GHZ)).argmin()
-            value_to_evaluate = s11_db[target_freq_index]
-            actual_freq_ghz = freq_ghz[target_freq_index]
-            print(f"  - S(Diff1,Diff1) at {actual_freq_ghz:.2f} GHz: {value_to_evaluate:.4f} dB")
-            cost = max(0, value_to_evaluate - TARGET_S11_DB_SINGLE_POINT)
-            print(f"  - Cost (Deviation from {TARGET_S11_DB_SINGLE_POINT}dB): {cost:.4f}")
-        
-        else:
-            raise ValueError(f"Unknown OPTIMIZATION_MODE: {OPTIMIZATION_MODE}")
-
-        # --- Update counters for logging and early stopping ---
-        global EVALUATION_COUNT, CONSECUTIVE_ZERO_COST_COUNT
-        EVALUATION_COUNT += 1
-        
-        if cost == 0:
+        if total_cost == 0:
             CONSECUTIVE_ZERO_COST_COUNT += 1
             print(f"  - Zero cost achieved. Consecutive count: {CONSECUTIVE_ZERO_COST_COUNT}")
         else:
-            CONSECUTIVE_ZERO_COST_COUNT = 0 # Reset counter if the cost is not zero
+            CONSECUTIVE_ZERO_COST_COUNT = 0
 
-        # --- Log the results, including segmented costs ---
+        # --- Log the results ---
         generation = (EVALUATION_COUNT - 1) // GENERATION_SIZE + 1
         iteration_in_gen = (EVALUATION_COUNT - 1) % GENERATION_SIZE + 1
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         
-        cost_values_to_log = [f"{cost:.6f}"]
-        if OPTIMIZATION_MODE == 'wideband':
-            cost_values_to_log.extend([f"{sc:.6f}" for sc in segmented_costs])
+        cost_values_to_log = [f"{total_cost:.6f}"]
+        cost_values_to_log.extend([f"{individual_costs.get(obj['strategy'].name, 0):.6f}" for obj in COST_OBJECTIVES])
 
         param_values = [f"{params[name]:.6f}" for name in PARAM_NAMES]
         log_data = [timestamp, str(generation), str(iteration_in_gen), str(EVALUATION_COUNT)] + cost_values_to_log + param_values
@@ -207,18 +288,17 @@ def evaluate_hfss(**params):
         logger.info(','.join(log_data))
 
         print("="*60)
-        return cost
+        return total_cost
     except Exception as e:
         print(f"  - An exception occurred during HFSS evaluation: {e}")
         traceback.print_exc()
         return 100.0
 
+
+
 # -----------------------------------------------------------------------------
-# 4. ADAPTIVE SPACE & PLOTTING FUNCTIONS
+# 5. UTILITY FUNCTIONS
 # -----------------------------------------------------------------------------
-
-
-
 
 def setup_logging():
     """Sets up a CSV logger to record optimization progress."""
@@ -232,14 +312,10 @@ def setup_logging():
         logger.addHandler(handler)
 
     if not file_exists:
-        # Dynamically create headers for segmented costs
-        cost_headers = ['Cost'] # Start with the total cost
-        if OPTIMIZATION_MODE == 'wideband':
-            last_freq = 0.0
-            for freq_limit, _ in WIDEBAND_TARGETS:
-                cost_headers.append(f"Cost_{last_freq:.1f}-{freq_limit:.1f}GHz")
-                last_freq = freq_limit
-
+        cost_headers = ['Total_Cost']
+        for obj in COST_OBJECTIVES:
+            cost_headers.append(f"Cost_{obj['strategy'].name}")
+        
         header = ['Timestamp', 'Generation', 'Iteration_in_Gen', 'Total_Iteration'] + cost_headers + PARAM_NAMES
         logger.info(','.join(header))
     
@@ -305,11 +381,11 @@ if __name__ == "__main__":
                     # --- After each generation, adapt the parameter space ---
                     # 1. Create a DataFrame for easier analysis
                     param_dict = {name: [x[i] for x in result.x_iters] for i, name in enumerate(PARAM_NAMES)}
-                    param_dict['Cost'] = result.func_vals
+                    param_dict['Total_Cost'] = result.func_vals
                     df = pd.DataFrame(param_dict)
 
                     # 2. Analyze results and compute new space
-                    elite_df = df.nsmallest(int(len(df) * ELITE_FRACTION), 'Cost')
+                    elite_df = df.nsmallest(int(len(df) * ELITE_FRACTION), 'Total_Cost')
                     best_params_this_gen = result.x
 
                     new_space = []
