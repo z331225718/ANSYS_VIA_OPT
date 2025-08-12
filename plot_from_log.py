@@ -25,7 +25,7 @@ def animate(i):
         df = pd.read_csv(LOG_FILE)
         
         # --- DYNAMICALLY FIND COST AND PARAMETER COLUMNS ---
-        cost_columns = [col for col in df.columns if col.startswith('Cost')]
+        cost_columns = [col for col in df.columns if col.find('Cost') != -1]
         if not cost_columns: return
         
         # This logic assumes parameters start right after the last cost column
